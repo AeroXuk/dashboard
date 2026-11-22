@@ -234,6 +234,7 @@ The dashboard has **no login**. Anyone who can reach it sees your service URLs, 
   - both containers: read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, memory and process limits
   - the dashboard: runs as uid 1000
   - the Docker proxy: an internal network with no internet access, not published on the host, read access to containers only
+  - healthchecks: the dashboard checks `/healthz`, the proxy checks it can reach Docker, and the dashboard waits for the proxy to be healthy before starting
 - **Mounts:** config and icons are mounted read-only.
 
 **Trade-off:** the proxy's container access includes inspect, which returns each container's environment variables. The dashboard only passes on the status fields above, but a compromised dashboard could read those variables.

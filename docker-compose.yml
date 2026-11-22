@@ -16,7 +16,14 @@ services:
       - default # outbound: service checks and icon downloads
       - docker-api # reaches the socket proxy only
     depends_on:
-      - docker-proxy
+      docker-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     # Hardening: read-only root filesystem, no Linux capabilities, no privilege escalation.
     read_only: true
     tmpfs:
@@ -39,6 +46,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - docker-api # no internet access, not published on the host
+    healthcheck:
+      # Asks Docker for its version through the proxy: proves the socket is reachable.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2375/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     read_only: true
     tmpfs:
       - /run:size=8m
