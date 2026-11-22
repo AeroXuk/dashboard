@@ -1,0 +1,201 @@
+name: CI
+
+# Every push to main and every pull request: typecheck, test, build, and build the Docker image
+# (not published).
+#
+# Releases: Actions → CI → Run workflow on main, tick "release" and enter a tag such as v1.2.0.
+# That builds a multi-arch image, pushes it to GitHub Container Registry as
+# ghcr.io/<owner>/<repo>:1.2.0, :1.2, :1 and :latest, then creates the git tag and a GitHub release.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Publish a release (push the image to GHCR, create the tag and a GitHub release)
+        type: boolean
+        default: false
+      tag:
+        description: Release tag, e.g. v1.2.0 or v1.3.0-rc.1 (required when release is ticked)
+        type: string
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Superseded PR builds are cancelled; main and release runs always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+      image: ${{ steps.plan.outputs.image }}
+    steps:
+      - name: Work out what this run does
+        id: plan
+        env:
+          # Inputs go through env, never straight into the script (avoids injection).
+          RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.release }}
+          TAG: ${{ inputs.tag }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "image=ghcr.io/${REPO,,}" >> "$GITHUB_OUTPUT"
+
+          if [ "$RELEASE" != "true" ]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Build only (no release)."
+            exit 0
+          fi
+
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Releases can only be made from main (this run is on $REF)."
+            exit 1
+          fi
+          if ! [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag \"$TAG\" must look like v1.2.3 or v1.2.3-rc.1."
+            exit 1
+          fi
+          if gh api "repos/$REPO/git/ref/tags/$TAG" --silent 2>/dev/null; then
+            echo "::error::Tag $TAG already exists."
+            exit 1
+          fi
+
+          version="${TAG#v}"
+          prerelease=false
+          [[ "$version" == *-* ]] && prerelease=true
+          {
+            echo "release=true"
+            echo "tag=$TAG"
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG (version $version, prerelease: $prerelease)."
+
+  test:
+    name: Typecheck, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  image:
+    name: Docker image
+    needs: [plan, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # only used when releasing
+      id-token: write # build provenance attestation
+      attestations: write
+    env:
+      RELEASE: ${{ needs.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (for arm64)
+        if: env.RELEASE == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: env.RELEASE == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.plan.outputs.image }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.plan.outputs.tag }},enable=${{ env.RELEASE == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.plan.outputs.tag }},enable=${{ env.RELEASE == 'true' }}
+            type=semver,pattern={{major}},value=${{ needs.plan.outputs.tag }},enable=${{ env.RELEASE == 'true' && !startsWith(needs.plan.outputs.tag, 'v0.') }}
+            type=raw,value=latest,enable=${{ env.RELEASE == 'true' && needs.plan.outputs.prerelease == 'false' }}
+            type=ref,event=pr
+            type=sha
+          labels: |
+            org.opencontainers.image.title=dashboard
+            org.opencontainers.image.description=Home server dashboard with browser-side access-method detection
+
+      - name: Build${{ needs.plan.outputs.release == 'true' && ' and push' || '' }}
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Releases are multi-arch; ordinary builds only check the image builds.
+          platforms: ${{ env.RELEASE == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ env.RELEASE == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: ${{ env.RELEASE == 'true' && 'mode=max' || 'false' }}
+          sbom: ${{ env.RELEASE == 'true' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Attest build provenance
+        if: env.RELEASE == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ needs.plan.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  release:
+    name: GitHub release
+    needs: [plan, image]
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+          IMAGE: ${{ needs.plan.outputs.image }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          notes=$(printf '%s\n' \
+            "## Container image" \
+            "" \
+            '```bash' \
+            "docker pull $IMAGE:$VERSION" \
+            '```' \
+            "" \
+            "Platforms: linux/amd64, linux/arm64.")
+          args=(--repo "$REPO" --target "$SHA" --title "$TAG" --notes "$notes" --generate-notes)
+          [ "$PRERELEASE" = "true" ] && args+=(--prerelease)
+          gh release create "$TAG" "${args[@]}"

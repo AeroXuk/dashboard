@@ -1,0 +1,55 @@
+name: dashboard
+
+services:
+  dashboard:
+    image: ghcr.io/aeroxuk/dashboard:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config:/config:ro # config.yaml (never written by the dashboard)
+      - ./icons:/icons:ro # your own icon files
+      - ./data:/data:rw # downloaded icon cache; must be writable by uid 1000
+    environment:
+      # Container status for services with `container:` (docker.host in config.yaml overrides this).
+      DOCKER_HOST: tcp://docker-proxy:2375
+    networks:
+      - default # outbound: service checks and icon downloads
+      - docker-api # reaches the socket proxy only
+    depends_on:
+      - docker-proxy
+    # Hardening: read-only root filesystem, no Linux capabilities, no privilege escalation.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 128
+    restart: unless-stopped
+
+  # Read-only gateway to the Docker API: only container list/inspect (GET) is allowed.
+  # Mounting docker.sock straight into the dashboard would give it root-level control of the host.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    environment:
+      CONTAINERS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api # no internet access, not published on the host
+    read_only: true
+    tmpfs:
+      - /run:size=8m
+      - /tmp:size=8m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    pids_limit: 64
+    restart: unless-stopped
+
+networks:
+  docker-api:
+    internal: true

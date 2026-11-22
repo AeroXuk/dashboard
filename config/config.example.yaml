@@ -1,0 +1,124 @@
+# Home server dashboard configuration.
+# The server reloads this file automatically when it changes.
+
+# Page title, shown in the header and the browser tab.
+title: Home Server
+
+settings:
+  # How long the browser waits for each probe before treating a URL as unreachable.
+  probeTimeoutMs: 2500
+  # How often to re-check reachability, in seconds. 0 = only on page load, when the
+  # network comes back online, when the tab becomes visible, or when you click re-check.
+  reprobeIntervalSec: 60
+  # Open services in a new browser tab (default true).
+  openInNewTab: true
+  # The browser can tell whether a URL answers, but not with what status, so a proxy's
+  # 404/502 for a stopped container would look fine. With httpCheck on, the dashboard
+  # server also requests each URL and marks HTTP errors (4xx/5xx) red. It only sees
+  # its own network; URLs it can't reach are left to the browser's result.
+  httpCheck: true
+  # Error statuses that still count as working, e.g. login prompts.
+  httpOkStatuses: [401, 403]
+
+# Access methods. The names are up to you: letters, digits, "_" and "-".
+# Methods are tried in the order listed here: each tile links through the first
+# one whose URL is reachable (move them to change the fallback order).
+# A method is shown online if at least one of its URLs answers from the
+# browser, and offline if every URL in it fails.
+#   label: display name (defaults to the method name)
+#   icon:  optional. A built-in icon: home, lan, wifi, vpn, globe, cloud, lock,
+#          server, link. Or any service icon source: a dashboard-icons name
+#          (e.g. "tailscale", "cloudflare"), a file in the icons folder, or a URL.
+#          If left out, a built-in icon is guessed from the name.
+methods:
+  local:
+    label: LAN
+    icon: home
+  tailnet:
+    label: Tailscale
+    icon: tailscale
+  tailnet2:
+    label: Tailscale IP
+    icon: vpn
+  public:
+    label: Public
+    icon: globe
+
+# Groups, shown in the order listed here (groups not listed follow in order of
+# first use; services without a group are always shown first). All keys optional:
+#   label:     heading text (defaults to the name; services use the name in group:)
+#   icon:      same choices as method icons; built-ins: home, lan, wifi, vpn, globe,
+#              cloud, lock, server, link, film, tv, music, download, cog, chart,
+#              camera, database, book, cpu
+#   collapsed: start collapsed (each browser then remembers its own choice)
+groups:
+  Media:
+    label: Movies & TV
+    icon: film
+  Infrastructure:
+    icon: server
+    collapsed: true
+
+# Container status (optional). Services with `container: <name>` get a coloured
+# bookmark showing the Docker container's state. The Docker API is reached via
+# docker.host, else DOCKER_HOST, else unix:///var/run/docker.sock. Prefer a
+# read-only socket proxy (see docker-compose.yml) to mounting docker.sock directly.
+# docker:
+#   host: tcp://docker-proxy:2375
+
+services:
+  # name:        required
+  # description: optional, shown under the name
+  # icon:        optional. One of:
+  #                - a dashboard-icons name, e.g. "jellyfin" (downloaded once from the
+  #                  homarr-labs/dashboard-icons CDN, then served locally)
+  #                - a file in the mounted icons folder, e.g. "nas.png"
+  #                - a full http(s) URL to an image (downloaded once, then served locally)
+  # group:       optional section heading
+  # order:       optional per-service fallback order (overrides the methods order)
+  # container:   optional Docker container name; shows its state as a bookmark
+  # probe:       optional path probed instead of the URL itself, resolved against
+  #              each URL ("/health" replaces the path, "health" is relative)
+  # urls:        method name -> URL (at least one)
+  # status:      reserved for future server-side status scripts (ignored for now)
+
+  - name: Jellyfin
+    description: Movies and TV
+    icon: jellyfin
+    group: Media
+    container: jellyfin
+    urls:
+      local: http://192.168.1.10:8096
+      tailnet: http://homeserver.tail1234.ts.net:8096
+      tailnet2: http://100.64.0.5:8096
+      public: https://jellyfin.example.com
+
+  - name: Sonarr
+    description: TV downloads
+    icon: sonarr
+    group: Media
+    # Not published publicly, so only private methods are listed.
+    urls:
+      local: http://192.168.1.10:8989
+      tailnet: http://homeserver.tail1234.ts.net:8989
+      tailnet2: http://100.64.0.5:8989
+
+  - name: Home Assistant
+    description: Home automation
+    icon: home-assistant
+    group: Home
+    # Prefer Tailscale even when on the LAN (e.g. for a trusted HTTPS cert).
+    order: [tailnet, local, public]
+    probe: /manifest.json
+    urls:
+      local: http://192.168.1.10:8123
+      tailnet: https://homeserver.tail1234.ts.net:8123
+      public: https://ha.example.com
+
+  - name: NAS
+    description: File storage
+    icon: nas.png   # put nas.png in the mounted icons folder
+    group: Home
+    urls:
+      local: http://192.168.1.20:5000
+      tailnet2: http://100.64.0.6:5000
