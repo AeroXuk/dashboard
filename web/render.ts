@@ -2,6 +2,7 @@
 import type { ClientConfig, ClientGroup, ClientMethod, ClientService, ContainerInfo } from '../shared/types';
 import { GLYPHS, guessGlyph, isGlyph } from '../shared/glyphs';
 import { methodStatus, pickMethod, type ProbeState } from './select';
+import { changedFromDefault } from './groups';
 import { readJSON, writeJSON } from './storage';
 
 const COLLAPSED_KEY = 'dashboard.collapsedGroups';
@@ -551,7 +552,11 @@ export function buildApp(root: HTMLElement, config: ClientConfig, handlers: Hand
 
   const toggleAll = el('button', 'toggle-all');
   toggleAll.type = 'button';
-  toolbar.append(search, seg, toggleAll);
+  const resetGroups = el('button', 'toggle-all', 'Reset');
+  resetGroups.type = 'button';
+  resetGroups.title = 'Expand and collapse groups as set in the config';
+  resetGroups.setAttribute('aria-label', 'Reset groups to their default');
+  toolbar.append(search, seg, toggleAll, resetGroups);
   header.append(toolbar);
 
   // Groups: ungrouped first (no heading), then named groups in config order.
@@ -641,6 +646,18 @@ export function buildApp(root: HTMLElement, config: ClientConfig, handlers: Hand
     applyFilter();
   });
 
+  // Reset: back to the config's defaults for every group, including ones a filter hides.
+  resetGroups.addEventListener('click', () => {
+    for (const key of Object.keys(saved)) delete saved[key];
+    for (const g of config.groups) {
+      const v = namedSections.find((x) => x.name === g.name);
+      if (v) v.collapsed = g.collapsed;
+    }
+    writeJSON(COLLAPSED_KEY, saved);
+    applyFilter();
+    toggleAll.focus();
+  });
+
   /**
    * Show matching tiles. Groups keep their collapsed state under every filter; a group's
    * heading shows how many of its services match, so collapsed matches are still visible.
@@ -677,6 +694,10 @@ export function buildApp(root: HTMLElement, config: ClientConfig, handlers: Hand
     toggleAll.disabled = visibleNamed.length === 0;
     toggleAll.textContent = anyOpen ? 'Collapse all' : 'Expand all';
     toggleAll.setAttribute('aria-label', anyOpen ? 'Collapse all groups' : 'Expand all groups');
+    resetGroups.hidden = !changedFromDefault(
+      config.groups,
+      Object.fromEntries(namedSections.map((x) => [x.name!, x.collapsed])),
+    );
     toolbar.classList.toggle('filtering', filtering);
     main.classList.toggle('filtering', filtering);
   }

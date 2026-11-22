@@ -169,6 +169,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .toggle-all:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
 .toggle-all:disabled { opacity: 0.5; cursor: default; }
+/* Reset sits right after Collapse/Expand all. */
+.toggle-all + .toggle-all { margin-left: 0; }
 
 /* Group headings are toggles */
 .group-title {
