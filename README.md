@@ -208,7 +208,7 @@ Only one Docker host is supported.
   - **Reachable**
   - **Degraded:** the service works, but has a red route or a container problem (stopped, restarting, paused, unhealthy or missing)
   - **Unreachable:** no route works
-- **Groups:** click a heading to collapse or expand it, or use **Collapse all / Expand all**. Each browser remembers its choice under every filter. Headings show how many services match the current filter.
+- **Groups:** click a heading to collapse or expand it, or use **Collapse all / Expand all**. Each browser remembers its choice under every filter. Once any group differs from its `collapsed` setting in the config, a **Reset** button appears next to it and puts every group back. Headings show how many services match the current filter.
 
 ## Security
 
