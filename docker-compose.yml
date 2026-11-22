@@ -38,7 +38,7 @@ services:
   # Read-only gateway to the Docker API: only container list/inspect (GET) is allowed.
   # Mounting docker.sock straight into the dashboard would give it root-level control of the host.
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:v0.4.1
+    image: tecnativa/docker-socket-proxy:3.4
     environment:
       CONTAINERS: 1
       POST: 0
