@@ -11,11 +11,44 @@ export async function probe(url: string, timeoutMs: number): Promise<boolean> {
       credentials: 'omit',
       redirect: 'follow',
       signal: AbortSignal.timeout(timeoutMs),
-    });
+      ...localNetworkInit(url, location.protocol),
+    } as RequestInit);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Extra fetch options that let an https page check an http:// URL on the
+ * local network. Chrome's Local Network Access exempts a request from mixed
+ * content blocking when it sets `targetAddressSpace: 'local'`, after the user
+ * allows the browser's local network prompt. The request then fails if the
+ * host turns out to be public, but an http:// request from an https page is
+ * blocked anyway, so nothing that worked before can break. Other browsers
+ * ignore the option. Loopback hosts are left alone: browsers already allow
+ * them, and they are not in the 'local' address space.
+ */
+export function localNetworkInit(url: string, pageProtocol: string): { targetAddressSpace?: 'local' } {
+  if (pageProtocol !== 'https:') return {};
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return {};
+  }
+  if (parsed.protocol !== 'http:' || isLoopback(parsed.hostname)) return {};
+  return { targetAddressSpace: 'local' };
+}
+
+function isLoopback(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    /^127\.\d+\.\d+\.\d+$/.test(host) ||
+    host === '[::1]'
+  );
 }
 
 /**
