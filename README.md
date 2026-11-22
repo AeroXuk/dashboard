@@ -241,8 +241,8 @@ The dashboard has **no login**. Anyone who can reach it sees your service URLs, 
 
 ## Browser limitations
 
-- **Mixed content:** opened over `https` (e.g. through a tunnel), the page can't check `http://` URLs, so those routes show offline.
-- **Local network access:** Chrome may ask for permission before a public page can reach private IP addresses.
+- **Mixed content:** opened over `https` (e.g. through a tunnel), the page can't check `http://` URLs, so those routes show offline. The exception is Chrome, with its Local Network Access feature. There the page marks these checks as local-network requests, and after you allow Chrome's prompt to access devices on your local network, `http://` URLs on your LAN can be checked. Other browsers still show them offline.
+- **Local network access:** Chrome may ask for permission before a public page can reach private IP addresses. If you block it, LAN routes show offline; you can change it later in the site settings.
 - **Certificates:** a self-signed or mismatched certificate fails the check until the browser trusts it. Tailscale IPs fail with a certificate issued for a `.ts.net` hostname, for example.
 - **Tip:** also open the dashboard on each network (e.g. `http://<server-lan-ip>:3000` on the LAN, or its Tailscale name) and bookmark the one that fits where you are. The page and its checks then use the same scheme.
 
